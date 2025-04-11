@@ -1,0 +1,31 @@
+# Core dependencies
+fastapi>=0.104.0
+uvicorn>=0.23.2
+python-dotenv>=1.0.0
+pydantic>=2.4.2
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+psycopg2-binary>=2.9.9  # For PostgreSQL
+redis>=5.0.0  # For caching
+
+# Authentication
+python-jose>=3.3.0  # JWT tokens
+passlib>=1.7.4  # Password hashing
+
+# AI and NLP
+openai>=1.2.0  # For GPT integration
+langchain>=0.0.300  # Optional: For more complex AI workflows
+
+# API Integrations
+requests>=2.31.0
+httpx>=0.25.0
+
+# Testing
+pytest>=7.4.2
+
+# Utilities
+python-dateutil>=2.8.2
+tqdm>=4.66.1
