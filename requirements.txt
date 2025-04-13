@@ -4,6 +4,7 @@ uvicorn>=0.23.2
 python-dotenv>=1.0.0
 pydantic>=2.4.2
 python-multipart>=0.0.6
+email-validator>=2.0.0  # For email validation in Pydantic
 
 # Database
 sqlalchemy>=2.0.0
@@ -18,6 +19,14 @@ passlib>=1.7.4  # Password hashing
 # AI and NLP
 openai>=1.2.0  # For GPT integration
 langchain>=0.0.300  # Optional: For more complex AI workflows
+newspaper3k>=0.2.8  # For article extraction
+bs4>=0.0.1  # BeautifulSoup for HTML parsing
+lxml>=4.9.3  # XML parser for BeautifulSoup
+
+# Document Processing
+PyPDF2>=3.0.0  # For PDF processing
+python-docx>=0.8.11  # For DOCX processing
+python-magic>=0.4.27  # For file type detection
 
 # API Integrations
 requests>=2.31.0
@@ -25,6 +34,8 @@ httpx>=0.25.0
 
 # Testing
 pytest>=7.4.2
+pytest-asyncio>=0.21.1  # For testing async functions
+pytest-cov>=4.1.0  # For test coverage
 
 # Utilities
 python-dateutil>=2.8.2

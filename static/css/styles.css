@@ -1,0 +1,76 @@
+/* Main Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+}
+
+/* Navigation */
+.navbar-brand {
+    font-weight: 600;
+}
+
+/* Page Switching */
+.page {
+    display: none;
+}
+
+.page.active {
+    display: block;
+}
+
+/* Source Input Tabs */
+.source-input {
+    display: none;
+}
+
+.source-input.active {
+    display: block;
+}
+
+/* Content Display */
+#content-display {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    min-height: 150px;
+    white-space: pre-wrap;
+}
+
+/* Dashboard Cards */
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+}
+
+/* Upcoming Posts */
+.upcoming-post {
+    border-left: 4px solid #0d6efd;
+    margin-bottom: 10px;
+}
+
+.upcoming-post .post-time {
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+.upcoming-post .post-content {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card-header-tabs {
+        flex-direction: column;
+    }
+    
+    .nav-tabs .nav-link {
+        margin-bottom: 0.5rem;
+    }
+}

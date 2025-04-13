@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
@@ -7,6 +7,7 @@ from app.models import User, Persona, Post, PostTone, PostStatus
 from app.schemas import ContentGenerationRequest, ContentGenerationResponse, PostCreate, Post as PostSchema
 from app.auth import get_current_active_user
 from app.ai.content_generator import content_generator
+from app.ai.document_processor import DocumentProcessor
 
 router = APIRouter(
     prefix="/content",
@@ -38,10 +39,17 @@ async def generate_content(
         
         persona_description = persona.description
     
-    # Generate content based on source type
+    # Validate source type first
+    if request.source_type not in ["bullet_points", "text", "url", "file"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported source type: {request.source_type}"
+        )
+    
     try:
+        # Generate content based on source type
         if request.source_type == "bullet_points":
-            # Expect source_data to contain a list of bullet points
+            # Validate bullet points
             bullet_points = request.source_data.get("points", [])
             if not bullet_points:
                 raise HTTPException(
@@ -56,7 +64,7 @@ async def generate_content(
             )
             
         elif request.source_type == "text":
-            # Expect source_data to contain text content
+            # Validate text content
             text = request.source_data.get("text", "")
             if not text:
                 raise HTTPException(
@@ -70,8 +78,23 @@ async def generate_content(
                 persona_description=persona_description
             )
             
-        elif request.source_type == "url":
-            # Expect source_data to contain a URL
+        elif request.source_type == "file":
+            # File content should already be processed and stored in source_data
+            file_data = request.source_data
+            if not file_data or "text" not in file_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid file data provided"
+                )
+            
+            content = await content_generator.generate_from_file(
+                file_data=file_data,
+                tone=request.tone,
+                persona_description=persona_description
+            )
+            
+        else:  # URL type
+            # Validate URL
             url = request.source_data.get("url", "")
             if not url:
                 raise HTTPException(
@@ -79,18 +102,21 @@ async def generate_content(
                     detail="No URL provided"
                 )
             
-            content = await content_generator.generate_from_url(
-                url=url,
-                tone=request.tone,
-                persona_description=persona_description
-            )
-            
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported source type: {request.source_type}"
-            )
-            
+            try:
+                content = await content_generator.generate_from_url(
+                    url=url,
+                    tone=request.tone,
+                    persona_description=persona_description
+                )
+            except HTTPException as e:
+                # Pass through HTTP exceptions from content generator
+                raise e
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error processing URL: {str(e)}"
+                )
+        
         return ContentGenerationResponse(
             content=content,
             tone=request.tone,
@@ -98,10 +124,68 @@ async def generate_content(
             source_data=request.source_data
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
+        # Log unexpected errors and return 500
+        logger.error(f"Unexpected error generating content: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating content: {str(e)}"
+            detail="An unexpected error occurred while generating content"
+        )
+
+@router.post("/upload", response_model=ContentGenerationResponse)
+async def upload_file(
+    file: UploadFile = File(...),
+    tone: PostTone = None,
+    persona_id: Optional[int] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Upload a file and generate LinkedIn post content from it"""
+    
+    # Check if persona exists and belongs to user if provided
+    persona_description = None
+    if persona_id:
+        persona = db.query(Persona).filter(
+            Persona.id == persona_id,
+            Persona.user_id == current_user.id
+        ).first()
+        
+        if not persona:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Persona not found or does not belong to current user"
+            )
+        
+        persona_description = persona.description
+    
+    try:
+        # Process the uploaded file
+        file_data = await DocumentProcessor.process_file(file)
+        
+        # Generate content from the processed file
+        content = await content_generator.generate_from_file(
+            file_data=file_data,
+            tone=tone or PostTone.PROFESSIONAL,  # Default to professional tone if not specified
+            persona_description=persona_description
+        )
+        
+        return ContentGenerationResponse(
+            content=content,
+            tone=tone or PostTone.PROFESSIONAL,
+            source_type="file",
+            source_data=file_data
+        )
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error processing file upload: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing the file"
         )
 
 @router.post("/save", response_model=PostSchema)

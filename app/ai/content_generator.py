@@ -51,9 +51,47 @@ class ContentGenerator:
         # Create prompt based on tone and persona
         prompt = self._create_prompt_from_text(text, tone, persona_description)
         
-        # Generate content using OpenAI
+        # Generate content using AI
         return await self._generate_content(prompt)
     
+    async def generate_from_file(self,
+                          file_data: Dict[str, Any],
+                          tone: PostTone,
+                          persona_description: Optional[str] = None) -> str:
+        """Generate a LinkedIn post from file content
+        
+        Args:
+            file_data: Dictionary containing extracted text and metadata from file
+            tone: Desired tone of the generated content
+            persona_description: Optional persona description to guide content style
+            
+        Returns:
+            str: Generated LinkedIn post content
+        """
+        # Extract text content from file data
+        text = file_data.get("text", "")
+        if not text:
+            raise ValueError("No text content found in file data")
+            
+        # Create prompt based on tone and persona
+        prompt = self._create_prompt_from_text(text, tone, persona_description)
+        
+        # Generate content using AI
+        return await self._generate_content(prompt)
+    
+    async def generate_content(self, source_type: str, source_data: str, tone: PostTone) -> str:
+        """Generate content based on source type and data"""
+        if source_type == 'blog':
+            return await self.generate_from_text(source_data, tone)
+        elif source_type == 'text':
+            return await process_text_content(source_data, tone)
+        elif source_type == 'url':
+            return await self.generate_from_url(source_data, tone)
+        elif source_type == 'file':
+            return await self.generate_from_file({'text': source_data}, tone)
+        else:
+            raise ValueError(f"Unsupported source type: {source_type}")
+
     async def generate_from_url(self, 
                          url: str, 
                          tone: PostTone,
@@ -63,7 +101,7 @@ class ContentGenerator:
             # Extract content from the URL
             extracted_text = await self._extract_content_from_url(url)
             
-            if not extracted_text:
+            if not extracted_text or extracted_text == f"Content from: {url}\n\nUnable to extract detailed content.":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Could not extract content from the provided URL"
@@ -75,9 +113,12 @@ class ContentGenerator:
             # Generate content using AI
             return await self._generate_content(prompt)
             
+        except HTTPException as e:
+            # Re-raise HTTP exceptions
+            raise
         except Exception as e:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Error processing URL: {str(e)}"
             )
     
@@ -85,22 +126,23 @@ class ContentGenerator:
         """Extract content from a URL using newspaper3k and BeautifulSoup"""
         try:
             # First try using newspaper3k which is good for article extraction
-            try:
-                article = Article(url)
-                article.download()
-                article.parse()
+            article = Article(url)
+            article.download()
+            article.parse()
+            
+            # If we have a title and text, use newspaper3k results
+            if article.title and article.text:
+                content = f"Title: {article.title}\n\n"
+                if article.meta_description:
+                    content += f"Description: {article.meta_description}\n\n"
+                content += article.text[:2000]  # Limit text length
+                return content
                 
-                # If we have a title and text, use newspaper3k results
-                if article.title and article.text:
-                    content = f"Title: {article.title}\n\n"
-                    if article.meta_description:
-                        content += f"Description: {article.meta_description}\n\n"
-                    content += article.text[:2000]  # Limit text length
-                    return content
-            except Exception as newspaper_error:
-                print(f"Newspaper3k extraction failed: {str(newspaper_error)}")
-                
-            # Fallback to basic httpx + BeautifulSoup extraction
+        except Exception as newspaper_error:
+            print(f"Newspaper3k extraction failed: {str(newspaper_error)}")
+            
+        # Fallback to basic httpx + BeautifulSoup extraction
+        try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                 response = await client.get(url)
                 response.raise_for_status()
@@ -135,8 +177,8 @@ class ContentGenerator:
                 
         except Exception as e:
             print(f"Error extracting content from URL: {str(e)}")
-            # Return a minimal result rather than failing completely
-            return f"Content from: {url}\n\nUnable to extract detailed content."
+            # Return empty string to trigger 400 error
+            return ""
     
     def _create_prompt_from_bullets(self, 
                                bullet_points: List[str], 
@@ -207,33 +249,24 @@ class ContentGenerator:
             temperature = 0.7
             
             if self.provider == "groq":
-                # Use Groq API
                 return await groq_client.generate_completion(
                     prompt=prompt,
                     system_message=system_message,
                     temperature=temperature
                 )
             else:
-                # Use OpenAI API (default)
-                response = await openai.ChatCompletion.acreate(
+                client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                response = await client.chat.completions.create(
                     model=self.openai_model,
                     messages=[
                         {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt}
                     ],
                     max_tokens=self.max_tokens,
-                    temperature=temperature,
-                    top_p=1.0,
-                    frequency_penalty=0.0,
-                    presence_penalty=0.0
+                    temperature=temperature
                 )
-                
-                # Extract the generated text from the response
-                generated_text = response.choices[0].message.content.strip()
-                return generated_text
-            
+                return response.choices[0].message.content.strip()
         except Exception as e:
-            # Log the error (in a production system)
             print(f"Error generating content with {self.provider}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -242,3 +275,8 @@ class ContentGenerator:
 
 # Create a singleton instance
 content_generator = ContentGenerator()
+
+async def process_text_content(text: str, tone: str) -> str:
+    """Process raw text input into social media content"""
+    prompt = content_generator._create_prompt_from_text(text, tone)
+    return await content_generator._generate_content(prompt)
